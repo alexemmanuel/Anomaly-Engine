@@ -1,6 +1,7 @@
 import React from 'react';
 import type { GameRoomState, Player, UserProfile } from '../types/game';
 import { sounds } from '../services/soundFx';
+import { auth } from '../services/firebase';
 import { 
   ShieldAlert, 
   Volume2, 
@@ -10,8 +11,10 @@ import {
   HelpCircle, 
   Activity, 
   Flame, 
-  Wifi,
-  Sparkles
+  LogIn,
+  LogOut,
+  Sparkles,
+  Bot
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -23,6 +26,9 @@ interface HeaderProps {
   onOpenLeaderboard: () => void;
   onOpenProfile: () => void;
   onOpenGuide: () => void;
+  onOpenAuth: () => void;
+  onOpenAdam: () => void;
+  onLogOut: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -34,8 +40,13 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenLeaderboard,
   onOpenProfile,
   onOpenGuide,
+  onOpenAuth,
+  onOpenAdam,
+  onLogOut,
 }) => {
   const isPlaying = roomState && roomState.phase !== 'lobby';
+  const currentUser = auth.currentUser;
+  const isGuest = !currentUser || currentUser.isAnonymous;
 
   return (
     <header className="bg-slate-950/90 border-b border-cyan-500/30 sticky top-0 z-40 backdrop-blur-md px-4 py-2.5">
@@ -64,6 +75,35 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           <div className="flex md:hidden items-center gap-1.5">
+            <button
+              onClick={() => {
+                sounds.playClick(600);
+                onOpenAdam();
+              }}
+              className="p-1.5 rounded-lg bg-cyan-950/80 border border-cyan-500/40 text-cyan-300"
+              title="A.D.A.M. Forensic AI"
+            >
+              <Bot className="w-4 h-4" />
+            </button>
+
+            {isGuest ? (
+              <button
+                onClick={onOpenAuth}
+                className="px-2 py-1 rounded-lg bg-cyan-500 text-slate-950 text-xs font-mono font-bold flex items-center gap-1"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                LOGIN
+              </button>
+            ) : (
+              <button
+                onClick={onLogOut}
+                className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-rose-400"
+                title="Log Out"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            )}
+
             <button
               onClick={onToggleMute}
               className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-cyan-300 transition"
@@ -113,8 +153,21 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         )}
 
-        {/* Global Navigation Tools: Leaderboard, Profile, Audio, Guide */}
+        {/* Global Navigation Tools: Leaderboard, Profile, A.D.A.M., Auth, Audio, Guide */}
         <div className="hidden md:flex items-center gap-2">
+          {/* A.D.A.M. Forensic AI Terminal */}
+          <button
+            onClick={() => {
+              sounds.playClick(600);
+              onOpenAdam();
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-950/90 to-blue-950/90 hover:from-cyan-900/90 hover:to-blue-900/90 border border-cyan-500/50 text-cyan-300 text-xs font-mono font-bold transition shadow-sm"
+            title="Open A.D.A.M. Forensic AI Terminal"
+          >
+            <Bot className="w-4 h-4 text-cyan-400 animate-pulse" />
+            <span>A.D.A.M. AI</span>
+          </button>
+
           {/* Guide */}
           <button
             onClick={() => {
@@ -139,7 +192,7 @@ export const Header: React.FC<HeaderProps> = ({
             <span>LEADERBOARD</span>
           </button>
 
-          {/* User Profile */}
+          {/* User Profile Dossier */}
           <button
             onClick={() => {
               sounds.playClick(600);
@@ -153,6 +206,33 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="text-[9px] text-cyan-400">LVL {userProfile.clearanceLevel}</span>
             </div>
           </button>
+
+          {/* Login or Logout Button */}
+          {isGuest ? (
+            <button
+              onClick={() => {
+                sounds.playClick(600);
+                onOpenAuth();
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-mono text-xs font-bold transition shadow-sm"
+              title="Sign in with Email or Google"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              <span>LOG IN</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                sounds.playClick(600);
+                onLogOut();
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-rose-950/40 border border-slate-800 hover:border-rose-500/40 text-slate-400 hover:text-rose-300 font-mono text-xs transition"
+              title={`Logged in as ${currentUser?.email || userProfile.displayName}. Click to sign out.`}
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>LOG OUT</span>
+            </button>
+          )}
 
           {/* Sound Toggle */}
           <button

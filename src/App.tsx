@@ -14,7 +14,7 @@ import type {
 } from './types/game';
 import { network } from './services/network';
 import { sounds } from './services/soundFx';
-import { initUserProfile, getLocalProfile } from './services/firebase';
+import { initUserProfile, getLocalProfile, logOut, auth } from './services/firebase';
 
 import { Header } from './components/Header';
 import { LobbyView } from './components/LobbyView';
@@ -28,6 +28,8 @@ import { GameOverModal } from './components/GameOverModal';
 import { LeaderboardModal } from './components/LeaderboardModal';
 import { UserProfileModal } from './components/UserProfileModal';
 import { GameGuideModal } from './components/GameGuideModal';
+import { AuthModal } from './components/AuthModal';
+import { AdamAssistantModal } from './components/AdamAssistantModal';
 
 import { WireMatrixGame } from './components/minigames/WireMatrixGame';
 import { SignalDecryptionGame } from './components/minigames/SignalDecryptionGame';
@@ -38,13 +40,8 @@ import {
   Map, 
   FileText, 
   AlertOctagon, 
-  Wifi, 
   WifiOff, 
-  Radio, 
-  Volume2, 
-  VolumeX, 
-  HelpCircle, 
-  RotateCcw 
+  CheckCircle2
 } from 'lucide-react';
 
 export default function App() {
@@ -53,6 +50,7 @@ export default function App() {
   const [myRole, setMyRole] = useState<Role | undefined>(undefined);
   const [networkStatus, setNetworkStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [isMuted, setIsMuted] = useState<boolean>(sounds.getMuted());
 
   // Active view tab during game
@@ -74,6 +72,8 @@ export default function App() {
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showAdamModal, setShowAdamModal] = useState(false);
 
   // Initialize Firebase User Profile
   useEffect(() => {
@@ -197,6 +197,40 @@ export default function App() {
     setIsMuted(muted);
   };
 
+  const handleAuthSuccess = (newProfile: UserProfile) => {
+    setUserProfile(newProfile);
+    setShowAuthModal(false);
+    setInfoMessage(`Authenticated as ${newProfile.displayName}`);
+    setTimeout(() => setInfoMessage(null), 3500);
+
+    // If already in a room, re-join with new identity
+    if (roomState) {
+      network.send({
+        type: 'join_room',
+        roomId: roomState.roomId,
+        player: {
+          id: newProfile.uid,
+          name: newProfile.displayName,
+          avatar: newProfile.avatar,
+          color: '#06b6d4',
+        },
+      });
+    }
+  };
+
+  const handleLogOut = async () => {
+    sounds.playClick(600);
+    try {
+      await logOut();
+      const freshGuest = await initUserProfile();
+      setUserProfile(freshGuest.profile);
+      setInfoMessage('Signed out of research terminal. Initialized new guest session.');
+      setTimeout(() => setInfoMessage(null), 3500);
+    } catch {
+      setErrorMessage('Logout error.');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-rose-500/30 selection:text-rose-200">
       {/* Network / Connection Toast */}
@@ -204,6 +238,14 @@ export default function App() {
         <div className="bg-amber-500/20 border-b border-amber-500/40 text-amber-300 px-4 py-1 text-xs font-mono flex items-center justify-center gap-2">
           <WifiOff className="w-3.5 h-3.5 animate-pulse" />
           <span>Synchronizing facility WebSocket uplink... ({networkStatus})</span>
+        </div>
+      )}
+
+      {/* Info Message Toast */}
+      {infoMessage && (
+        <div className="fixed top-14 left-1/2 -translate-x-1/2 z-50 bg-emerald-950/90 border border-emerald-500 text-emerald-200 px-4 py-2 rounded-xl text-xs font-mono shadow-2xl flex items-center gap-2 animate-bounce">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          <span>{infoMessage}</span>
         </div>
       )}
 
@@ -225,6 +267,9 @@ export default function App() {
         onOpenLeaderboard={() => setShowLeaderboard(true)}
         onOpenProfile={() => setShowProfile(true)}
         onOpenGuide={() => setShowGuide(true)}
+        onOpenAuth={() => setShowAuthModal(true)}
+        onOpenAdam={() => setShowAdamModal(true)}
+        onLogOut={handleLogOut}
       />
 
       {/* Main Container */}
@@ -240,6 +285,7 @@ export default function App() {
             onAddBots={handleAddBots}
             onRemoveBot={handleRemoveBot}
             onStartGame={handleStartGame}
+            onOpenAuth={() => setShowAuthModal(true)}
           />
         ) : (
           <div className="space-y-4">
@@ -401,6 +447,25 @@ export default function App() {
           profile={userProfile}
           onUpdate={updated => setUserProfile(updated)}
           onClose={() => setShowProfile(false)}
+          onOpenAuth={() => setShowAuthModal(true)}
+          onLogOut={handleLogOut}
+        />
+      )}
+
+      {/* Authentication Modal */}
+      {showAuthModal && (
+        <AuthModal
+          onSuccess={handleAuthSuccess}
+          onClose={() => setShowAuthModal(false)}
+        />
+      )}
+
+      {/* A.D.A.M. Forensic AI Terminal Modal */}
+      {showAdamModal && (
+        <AdamAssistantModal
+          roomState={roomState}
+          currentPlayer={currentPlayer}
+          onClose={() => setShowAdamModal(false)}
         />
       )}
 

@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import type { GameRoomState, Player } from '../types/game';
 import { sounds } from '../services/soundFx';
+import { transcribeAudio } from '../services/gemini';
 import { 
   AlertOctagon, 
   Clock, 
@@ -10,7 +11,10 @@ import {
   ShieldAlert, 
   HelpCircle,
   MessageSquare,
-  Activity
+  Activity,
+  Mic,
+  MicOff,
+  Sparkles
 } from 'lucide-react';
 
 interface EmergencyMeetingProps {
@@ -37,6 +41,11 @@ export const EmergencyMeetingView: React.FC<EmergencyMeetingProps> = ({
   chatMessages,
 }) => {
   const [inputText, setInputText] = useState('');
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
   const caller = roomState.emergencyCallerId ? roomState.players[roomState.emergencyCallerId] : null;
 
   // Heartbeat sound pulse effect
@@ -64,6 +73,58 @@ export const EmergencyMeetingView: React.FC<EmergencyMeetingProps> = ({
   const handlePresetClick = (preset: string) => {
     sounds.playClick(600);
     onSendChat(preset);
+  };
+
+  // Microphone Voice Transcription using gemini-3.5-transcribe
+  const handleToggleRecord = async () => {
+    if (isRecording) {
+      // Stop recording
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        mediaRecorderRef.current.stop();
+      }
+      setIsRecording(false);
+      return;
+    }
+
+    try {
+      sounds.playClick(700);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach(track => track.stop());
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        if (audioBlob.size > 500) {
+          setIsTranscribing(true);
+          try {
+            const transcribed = await transcribeAudio(audioBlob);
+            if (transcribed) {
+              sounds.playTaskSuccess();
+              setInputText(prev => prev ? `${prev} ${transcribed}` : transcribed);
+            }
+          } catch (err) {
+            console.error('Transcription error:', err);
+            sounds.playGlitch();
+          } finally {
+            setIsTranscribing(false);
+          }
+        }
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.warn('Microphone permission not granted:', err);
+      sounds.playGlitch();
+    }
   };
 
   const alivePlayers = Object.values(roomState.players).filter(p => p.isAlive);
@@ -207,12 +268,18 @@ export const EmergencyMeetingView: React.FC<EmergencyMeetingProps> = ({
           )}
         </div>
 
-        {/* Real-time Forensic Deliberation Chat & Evidence Presets (5 Cols) */}
+        {/* Real-time Forensic Deliberation Chat & Voice Transcription (5 Cols) */}
         <div className="lg:col-span-5 bg-slate-950/90 rounded-xl border border-slate-800 p-4 flex flex-col justify-between shadow-xl">
           <div>
-            <div className="flex items-center gap-2 pb-2.5 border-b border-slate-800 mb-3 text-xs font-mono text-cyan-400 font-bold">
-              <MessageSquare className="w-4 h-4" />
-              <span>SECURE RESEARCH DELIBERATION CHANNEL</span>
+            <div className="flex items-center justify-between pb-2.5 border-b border-slate-800 mb-3 text-xs font-mono text-cyan-400 font-bold">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="w-4 h-4" />
+                <span>SECURE RESEARCH CHANNEL</span>
+              </div>
+              <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                <Sparkles className="w-2.5 h-2.5 text-cyan-400" />
+                VOICE TRANSCRIBE READY
+              </span>
             </div>
 
             {/* Quick Evidence Presets */}
@@ -235,7 +302,7 @@ export const EmergencyMeetingView: React.FC<EmergencyMeetingProps> = ({
             <div className="overflow-y-auto max-h-[220px] space-y-2 pr-1 custom-scrollbar">
               {chatMessages.length === 0 ? (
                 <div className="text-center py-8 text-slate-600 font-mono text-xs italic">
-                  Open frequency. Present your logic deduction or state your alibi.
+                  Open frequency. Speak into mic or type to present your logic deduction or alibi.
                 </div>
               ) : (
                 chatMessages.map((msg, i) => (
@@ -253,18 +320,42 @@ export const EmergencyMeetingView: React.FC<EmergencyMeetingProps> = ({
             </div>
           </div>
 
-          {/* Chat Input */}
+          {/* Chat Input & Mic Button */}
           <form onSubmit={handleSendMessage} className="mt-3 flex gap-2">
             <input
               type="text"
-              placeholder="State evidence or cross-examine..."
+              placeholder={isTranscribing ? "Transcribing speech via Gemini..." : isRecording ? "Listening... speak now" : "State evidence or cross-examine..."}
               value={inputText}
               onChange={e => setInputText(e.target.value)}
-              className="flex-1 px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+              disabled={isTranscribing}
+              className={`flex-1 px-3 py-2 rounded-lg bg-slate-900 border text-xs font-mono text-slate-100 placeholder-slate-500 focus:outline-none transition ${
+                isRecording
+                  ? 'border-rose-500 ring-2 ring-rose-500/30'
+                  : 'border-slate-700 focus:border-cyan-500'
+              }`}
             />
+
+            {/* Voice Transcribe Button */}
+            <button
+              type="button"
+              onClick={handleToggleRecord}
+              disabled={isTranscribing}
+              className={`p-2 rounded-lg font-mono text-xs font-bold transition flex items-center gap-1 shadow-md ${
+                isRecording
+                  ? 'bg-rose-600 text-white animate-pulse'
+                  : isTranscribing
+                  ? 'bg-slate-800 text-cyan-400 animate-spin'
+                  : 'bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-slate-700'
+              }`}
+              title={isRecording ? 'Click to stop and transcribe speech' : 'Click to speak and transcribe with Gemini 3.5'}
+            >
+              {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+            </button>
+
             <button
               type="submit"
-              className="p-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold transition shadow-md"
+              disabled={!inputText.trim()}
+              className="p-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold transition shadow-md disabled:bg-slate-800 disabled:text-slate-600"
             >
               <Send className="w-4 h-4" />
             </button>

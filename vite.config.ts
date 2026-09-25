@@ -4,14 +4,19 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { defineConfig, type Plugin } from 'vite';
 import { setupGameWebSocketServer } from './src/server/gameServer.ts';
+import { geminiRouter } from './src/server/geminiRoutes.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-function gameWebSocketPlugin(): Plugin {
+function gameServerPlugin(): Plugin {
   return {
-    name: 'anomaly-websocket-game-server',
+    name: 'anomaly-game-server-plugin',
     configureServer(server) {
+      // Mount Gemini API endpoints on Vite middleware
+      server.middlewares.use('/api/gemini', geminiRouter as any);
+
+      // Mount WebSocket server on Vite HTTP server
       if (server.httpServer) {
         setupGameWebSocketServer(server.httpServer as any);
       }
@@ -21,7 +26,7 @@ function gameWebSocketPlugin(): Plugin {
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss(), gameWebSocketPlugin()],
+    plugins: [react(), tailwindcss(), gameServerPlugin()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

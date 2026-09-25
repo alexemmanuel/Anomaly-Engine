@@ -1,10 +1,21 @@
 /**
  * Firebase Integration for The Anomaly Engine
- * Handles user profiles, persistent dossiers, stats, and leaderboards.
+ * Handles user profiles, persistent dossiers, stats, leaderboards, and Authentication.
  */
 
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import { 
+  getAuth, 
+  signInAnonymously, 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  signOut as fbSignOut, 
+  onAuthStateChanged, 
+  updateProfile as fbUpdateProfile,
+  User as FirebaseUser 
+} from 'firebase/auth';
 import { 
   getFirestore, 
   doc, 
@@ -33,7 +44,6 @@ const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 export const auth = getAuth(app);
 export const db: Firestore = getFirestore(app, configJson.firestoreDatabaseId || '(default)');
 
-// Local fallback user storage
 const LOCAL_STORAGE_USER_KEY = 'ae_user_profile_v1';
 
 export function getLocalProfile(): UserProfile {
@@ -78,36 +88,125 @@ export function saveLocalProfile(profile: UserProfile): void {
 }
 
 /**
- * Initializes authentication and retrieves or provisions user profile in Firestore
+ * Loads or provisions a Firestore profile for the authenticated Firebase user
  */
-export async function initUserProfile(): Promise<{ user: FirebaseUser | null; profile: UserProfile }> {
-  let localProfile = getLocalProfile();
+export async function loadOrCreateProfileForUser(user: FirebaseUser, customData?: { displayName?: string; avatar?: string }): Promise<UserProfile> {
+  const local = getLocalProfile();
+  const userDocRef = doc(db, 'users', user.uid);
 
   try {
-    const userCred = await signInAnonymously(auth);
-    const user = userCred.user;
-
-    // Use firebase auth uid
-    localProfile.uid = user.uid;
-
-    const userDocRef = doc(db, 'users', user.uid);
     const docSnap = await getDoc(userDocRef);
-
     if (docSnap.exists()) {
       const data = docSnap.data() as UserProfile;
-      localProfile = { ...localProfile, ...data, uid: user.uid };
-      saveLocalProfile(localProfile);
-    } else {
-      // First time in Firestore, write initial profile
-      await setDoc(userDocRef, localProfile);
-      await updateLeaderboardEntry(localProfile);
+      const merged: UserProfile = {
+        ...local,
+        ...data,
+        uid: user.uid,
+        displayName: data.displayName || user.displayName || local.displayName,
+      };
+      saveLocalProfile(merged);
+      return merged;
     }
-
-    return { user, profile: localProfile };
-  } catch (err) {
-    console.warn('Firebase auth / Firestore connection using local profile fallback:', err);
-    return { user: null, profile: localProfile };
+  } catch (e) {
+    console.warn('Could not read user profile from Firestore:', e);
   }
+
+  // Create new profile for user
+  const initial: UserProfile = {
+    ...local,
+    uid: user.uid,
+    displayName: customData?.displayName || user.displayName || local.displayName || 'Researcher',
+    avatar: customData?.avatar || local.avatar || '🔬',
+    updatedAt: Date.now(),
+  };
+
+  try {
+    await setDoc(userDocRef, initial);
+    await updateLeaderboardEntry(initial);
+  } catch (e) {
+    console.warn('Could not save initial profile to Firestore:', e);
+  }
+
+  saveLocalProfile(initial);
+  return initial;
+}
+
+/**
+ * Initializes authentication and retrieves profile
+ */
+export async function initUserProfile(): Promise<{ user: FirebaseUser | null; profile: UserProfile }> {
+  return new Promise((resolve) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      unsubscribe();
+      if (user) {
+        const profile = await loadOrCreateProfileForUser(user);
+        resolve({ user, profile });
+      } else {
+        // Sign in anonymously as default guest if no user is signed in
+        try {
+          const cred = await signInAnonymously(auth);
+          const profile = await loadOrCreateProfileForUser(cred.user);
+          resolve({ user: cred.user, profile });
+        } catch {
+          resolve({ user: null, profile: getLocalProfile() });
+        }
+      }
+    });
+  });
+}
+
+/**
+ * Sign In with Email & Password
+ */
+export async function logInWithEmail(email: string, pass: string): Promise<UserProfile> {
+  const cred = await signInWithEmailAndPassword(auth, email, pass);
+  return await loadOrCreateProfileForUser(cred.user);
+}
+
+/**
+ * Sign Up with Email & Password
+ */
+export async function registerWithEmail(
+  email: string, 
+  pass: string, 
+  displayName: string, 
+  avatar: string
+): Promise<UserProfile> {
+  const cred = await createUserWithEmailAndPassword(auth, email, pass);
+  try {
+    await fbUpdateProfile(cred.user, { displayName });
+  } catch {}
+  return await loadOrCreateProfileForUser(cred.user, { displayName, avatar });
+}
+
+/**
+ * Sign In with Google Popup
+ */
+export async function logInWithGoogle(): Promise<UserProfile> {
+  const provider = new GoogleAuthProvider();
+  const cred = await signInWithPopup(auth, provider);
+  return await loadOrCreateProfileForUser(cred.user, {
+    displayName: cred.user.displayName || undefined,
+  });
+}
+
+/**
+ * Continue / Sign In as Anonymous Guest
+ */
+export async function logInAsGuest(): Promise<UserProfile> {
+  if (auth.currentUser?.isAnonymous) {
+    return await loadOrCreateProfileForUser(auth.currentUser);
+  }
+  const cred = await signInAnonymously(auth);
+  return await loadOrCreateProfileForUser(cred.user);
+}
+
+/**
+ * Sign Out
+ */
+export async function logOut(): Promise<void> {
+  await fbSignOut(auth);
+  localStorage.removeItem(LOCAL_STORAGE_USER_KEY);
 }
 
 /**
@@ -139,10 +238,8 @@ export async function recordMatchResult(
     updatedAt: Date.now(),
   };
 
-  // Calculate clearance level
   updated.clearanceLevel = Math.floor(updated.xp / 250) + 1;
 
-  // Calculate achievements
   const achievements = new Set(updated.achievements);
   if (updated.stats.gamesPlayed >= 1) achievements.add('FIRST_CONTAINMENT');
   if (updated.stats.scientistWins >= 3) achievements.add('LOGIC_SPECIALIST');
@@ -212,7 +309,6 @@ export async function fetchTopResearchers(): Promise<LeaderboardEntry[]> {
     console.warn('Error fetching Firestore leaderboard, fallback to simulated top operatives:', err);
   }
 
-  // Fallback high scores if fresh database
   return [
     { uid: 'f1', displayName: 'Chief Synthesist Mercer', avatar: '🧠', clearanceLevel: 9, wins: 42, winRate: 78, gamesPlayed: 54, favoriteRole: 'scientist', rating: 2150 },
     { uid: 'f2', displayName: 'Synthesist Cipher_X', avatar: '☣️', clearanceLevel: 8, wins: 36, winRate: 72, gamesPlayed: 50, favoriteRole: 'anomaly', rating: 1980 },

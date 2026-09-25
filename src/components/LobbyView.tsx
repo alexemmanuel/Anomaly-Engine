@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { GameRoomState, Player, UserProfile } from '../types/game';
 import { sounds } from '../services/soundFx';
+import { auth } from '../services/firebase';
 import { 
   Users, 
   Bot, 
@@ -14,7 +15,9 @@ import {
   Radio, 
   Key, 
   Sparkles,
-  UserPlus
+  UserPlus,
+  LogIn,
+  LogOut
 } from 'lucide-react';
 
 interface LobbyViewProps {
@@ -27,6 +30,7 @@ interface LobbyViewProps {
   onAddBots: (count: number) => void;
   onRemoveBot: (botId: string) => void;
   onStartGame: () => void;
+  onOpenAuth: () => void;
 }
 
 export const LobbyView: React.FC<LobbyViewProps> = ({
@@ -39,9 +43,13 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
   onAddBots,
   onRemoveBot,
   onStartGame,
+  onOpenAuth,
 }) => {
   const [joinCode, setJoinCode] = useState('');
   const [copied, setCopied] = useState(false);
+
+  const currentUser = auth.currentUser;
+  const isGuest = !currentUser || currentUser.isAnonymous;
 
   // If not joined to any room yet, show Create / Join screen
   if (!roomState || !currentPlayer) {
@@ -60,8 +68,8 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
           </p>
         </div>
 
-        {/* Profile Card Preview */}
-        <div className="p-3.5 bg-slate-950/80 rounded-xl border border-slate-800 mb-6 flex items-center justify-between">
+        {/* Profile Card Preview with Log In / Switch Account option */}
+        <div className="p-3.5 bg-slate-950/80 rounded-xl border border-slate-800 mb-6 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <span className="text-3xl">{userProfile.avatar}</span>
             <div>
@@ -69,11 +77,22 @@ export const LobbyView: React.FC<LobbyViewProps> = ({
               <div className="text-[10px] font-mono text-cyan-400">
                 Clearance Level {userProfile.clearanceLevel} • {userProfile.stats.gamesPlayed} Matches
               </div>
+              <div className="text-[9px] font-mono text-slate-500">
+                {isGuest ? 'Guest Session' : currentUser?.email || 'Authenticated'}
+              </div>
             </div>
           </div>
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
-            DOSSIER ACTIVE
-          </span>
+
+          <button
+            onClick={() => {
+              sounds.playClick(600);
+              onOpenAuth();
+            }}
+            className="px-3 py-1.5 rounded-lg bg-cyan-950/80 hover:bg-cyan-900/80 border border-cyan-500/40 text-cyan-300 font-mono text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+          >
+            <LogIn className="w-3.5 h-3.5" />
+            <span>{isGuest ? 'LOG IN' : 'SWITCH USER'}</span>
+          </button>
         </div>
 
         <div className="space-y-4">

@@ -12,13 +12,20 @@ import {
   Zap, 
   Check, 
   Activity,
-  Edit2
+  Edit2,
+  LogIn,
+  LogOut,
+  KeyRound,
+  Mail,
+  ShieldAlert
 } from 'lucide-react';
 
 interface UserProfileModalProps {
   profile: UserProfile;
   onUpdate: (profile: UserProfile) => void;
   onClose: () => void;
+  onOpenAuth: () => void;
+  onLogOut: () => void;
 }
 
 const AVATAR_OPTIONS = ['🔬', '🧬', '⚡', '🤖', '🛰️', '🧠', '🛡️', '☣️', '🕵️', '🦾', '🪐', '🔮'];
@@ -33,10 +40,19 @@ const ACHIEVEMENT_DETAILS: Record<string, { title: string; desc: string; icon: s
   LEVEL_5_CLEARANCE: { title: 'Senior Director', desc: 'Attained Level 5 Security Clearance', icon: '🎖️' },
 };
 
-export const UserProfileModal: React.FC<UserProfileModalProps> = ({ profile, onUpdate, onClose }) => {
+export const UserProfileModal: React.FC<UserProfileModalProps> = ({ 
+  profile, 
+  onUpdate, 
+  onClose,
+  onOpenAuth,
+  onLogOut
+}) => {
   const [name, setName] = useState(profile.displayName);
   const [avatar, setAvatar] = useState(profile.avatar);
   const [isSaved, setIsSaved] = useState(false);
+
+  const currentUser = auth.currentUser;
+  const isGuest = !currentUser || currentUser.isAnonymous;
 
   const handleSave = async () => {
     sounds.playTaskSuccess();
@@ -94,6 +110,71 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ profile, onU
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto space-y-5 pr-1 custom-scrollbar">
+          {/* Security & Authentication Box */}
+          <div className="p-4 bg-slate-900/90 rounded-xl border border-cyan-500/30 font-mono text-xs">
+            <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
+              <span className="text-slate-300 font-bold uppercase flex items-center gap-1.5">
+                <KeyRound className="w-3.5 h-3.5 text-cyan-400" />
+                SECURITY & AUTHENTICATION STATUS
+              </span>
+              <span className={`text-[10px] px-2 py-0.5 rounded ${
+                isGuest 
+                  ? 'bg-amber-950/70 border border-amber-500/40 text-amber-300' 
+                  : 'bg-emerald-950/70 border border-emerald-500/40 text-emerald-300'
+              }`}>
+                {isGuest ? 'GUEST CLEARANCE' : 'VERIFIED RESEARCHER'}
+              </span>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-slate-400 text-xs">
+              <div>
+                <div className="text-slate-200">
+                  {currentUser?.email ? (
+                    <span className="flex items-center gap-1 text-cyan-300">
+                      <Mail className="w-3 h-3 text-cyan-400" />
+                      {currentUser.email}
+                    </span>
+                  ) : (
+                    <span>Temporary Guest Session (UID: {profile.uid.slice(0, 10)}...)</span>
+                  )}
+                </div>
+                <div className="text-[10px] text-slate-500 mt-0.5">
+                  {isGuest 
+                    ? 'Records stored in local cache. Sign in to sync across devices.' 
+                    : 'Records persistently saved in Google Cloud Firestore.'}
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                {isGuest ? (
+                  <button
+                    onClick={() => {
+                      sounds.playClick(600);
+                      onClose();
+                      onOpenAuth();
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold transition flex items-center gap-1.5 shadow"
+                  >
+                    <LogIn className="w-3.5 h-3.5" />
+                    SIGN IN / LINK ACCOUNT
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      sounds.playClick(600);
+                      onClose();
+                      onLogOut();
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-rose-950/50 border border-slate-700 hover:border-rose-500/50 text-slate-300 hover:text-rose-300 transition flex items-center gap-1.5"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    LOG OUT
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* Identity Customization */}
           <div className="p-4 bg-slate-900/80 rounded-xl border border-slate-800">
             <div className="text-xs font-mono text-slate-400 uppercase mb-3 flex items-center gap-1.5">
