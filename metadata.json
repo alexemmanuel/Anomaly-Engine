@@ -1,0 +1,6 @@
+{
+  "name": "The Anomaly Engine",
+  "description": "Multiplayer social deduction and logic game where human intuition battles anomalous corruption inside a rogue AI research facility.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
